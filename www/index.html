@@ -1,0 +1,305 @@
+<style>
+  :root{
+    --ink:#1B1F2B;
+    --ink-soft:#3A4256;
+    --paper:#E8E1CE;
+    --paper-dim:#DCD3BC;
+    --seal:#A8342A;
+    --seal-dim:#c96d63;
+    --gold:#C9A227;
+    --line:#c9bfa4;
+    --sans:'IBM Plex Sans', -apple-system, sans-serif;
+    --serif:'Source Serif 4', Georgia, serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
+  * { box-sizing: border-box; }
+  #app{ font-family: var(--sans); color: var(--ink); background: var(--paper); min-height: 100%; display:flex; }
+
+  /* ---- Library rail ---- */
+  #rail{ width:230px; flex-shrink:0; background:var(--ink); color:var(--paper); padding:20px 14px; min-height:100vh; }
+  #rail h1{ font-family: var(--serif); font-size:1.3rem; font-weight:600; margin:0 0 4px; letter-spacing:.2px; }
+  #rail .tagline{ font-size:.72rem; color:#9aa2b8; margin-bottom:20px; line-height:1.4; }
+  #uploadBtn{ display:block; width:100%; text-align:center; background:var(--seal); color:#fff; border:none; padding:10px 8px; border-radius:3px; font-size:.85rem; font-weight:500; cursor:pointer; margin-bottom:6px; }
+  #uploadBtn:hover{ background:var(--seal-dim); }
+  #fileHint{ font-size:.68rem; color:#767e94; margin-bottom:18px; line-height:1.4; }
+  #shelf{ display:flex; flex-direction:column; gap:6px; }
+  .shelf-item{ background:#262c3d; border-radius:3px; padding:9px 10px; cursor:pointer; border-left:3px solid transparent; }
+  .shelf-item:hover{ background:#2e3549; }
+  .shelf-item.active{ border-left-color: var(--gold); background:#2e3549; }
+  .shelf-item .t{ font-size:.82rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .shelf-item .p{ font-size:.68rem; color:#8b92a8; margin-top:2px; }
+  .shelf-empty{ font-size:.75rem; color:#6b7186; font-style:italic; }
+
+  /* ---- Main reading area ---- */
+  #main{ flex:1; display:flex; flex-direction:column; min-height:100vh; }
+  #topbar{ display:flex; align-items:center; justify-content:space-between; padding:14px 28px; border-bottom:1px solid var(--line); }
+  #bookTitle{ font-family:var(--serif); font-size:1.05rem; font-weight:600; }
+  #langBadge{ font-size:.72rem; background:var(--ink-soft); color:#fff; padding:3px 9px; border-radius:20px; }
+  #stage{ flex:1; display:flex; align-items:flex-start; justify-content:center; padding:30px 28px; gap:24px; overflow:auto; }
+  #welcome{ margin:auto; max-width:440px; text-align:center; color:var(--ink-soft); }
+  #welcome h2{ font-family:var(--serif); font-weight:600; font-size:1.5rem; margin-bottom:10px; }
+  #welcome p{ font-size:.9rem; line-height:1.6; }
+
+  .page-pane{ background:#fff; border:1px solid var(--line); border-radius:2px; max-width:560px; width:100%; }
+  #imgWrap{ text-align:center; background:#f2efe4; }
+  #imgWrap img{ max-width:100%; display:block; margin:0 auto; }
+  .pane-label{ font-size:.68rem; text-transform:uppercase; letter-spacing:.08em; color:#8a8367; padding:8px 14px 0; }
+  .pane-body{ padding:10px 16px 18px; font-size:.95rem; line-height:1.75; white-space:pre-wrap; font-family: var(--serif); }
+  .pane-body.busy{ color:#a49f8c; font-style:italic; font-family: var(--sans); font-size:.85rem; }
+
+  #controls{ display:flex; align-items:center; justify-content:center; gap:14px; padding:16px; border-top:1px solid var(--line); }
+  #controls button{ background:var(--ink); color:#fff; border:none; padding:8px 16px; border-radius:3px; font-size:.82rem; cursor:pointer; }
+  #controls button:disabled{ opacity:.35; cursor:default; }
+  #pageIndicator{ font-size:.82rem; color:var(--ink-soft); min-width:70px; text-align:center; }
+
+  ::-webkit-scrollbar{ width:8px; } ::-webkit-scrollbar-thumb{ background:#00000022; border-radius:4px; }
+</style>
+
+<div id="app">
+  <div id="rail">
+    <h1>Ferryman</h1>
+    <div class="tagline">Carries a story across a language, one page at a time.</div>
+    <button id="uploadBtn">Add pages</button>
+    <input id="fileInput" type="file" multiple accept=".pdf,.html,.htm,.txt,image/*" style="display:none">
+    <div id="fileHint">Manga: select all page images at once. PDF/HTML/TXT: select one file.</div>
+    <div id="shelf"></div>
+  </div>
+
+  <div id="main">
+    <div id="topbar" style="display:none">
+      <div id="bookTitle"></div>
+      <div id="langBadge"></div>
+    </div>
+    <div id="stage">
+      <div id="welcome">
+        <h2>Nothing loaded yet</h2>
+        <p>Add manga page images, a PDF, or an HTML/text file on the left. Each page is translated only when you open it, so nothing sits around waiting to be read.</p>
+      </div>
+    </div>
+    <div id="controls" style="display:none">
+      <button id="prevBtn">← Prev</button>
+      <span id="pageIndicator"></span>
+      <button id="nextBtn">Next →</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('fileInput');
+  document.getElementById('uploadBtn').onclick = () => fileInput.click();
+
+  let books = {};       // bookId -> {id,title,type,pageCount,pages:[{kind,data}], lastPage, cache:{idx:translatedText}}
+  let currentBookId = null;
+
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+  }
+
+  function hashId(name, size){
+    let h = 0;
+    const s = name + ':' + size;
+    for (let i=0;i<s.length;i++){ h = ((h<<5)-h) + s.charCodeAt(i); h|=0; }
+    return 'book_' + Math.abs(h);
+  }
+
+  async function loadShelf(){
+    try{
+      const list = await window.storage.list('meta:');
+      const shelf = document.getElementById('shelf');
+      if (!list || !list.keys || list.keys.length === 0){
+        shelf.innerHTML = '<div class="shelf-empty">Your added books will remember their page and translations here.</div>';
+        return;
+      }
+      shelf.innerHTML = '';
+      for (const key of list.keys){
+        try{
+          const rec = await window.storage.get(key);
+          const meta = JSON.parse(rec.value);
+          const el = document.createElement('div');
+          el.className = 'shelf-item' + (meta.id === currentBookId ? ' active' : '');
+          el.innerHTML = `<div class="t">${meta.title}</div><div class="p">page ${meta.lastPage+1} of ${meta.pageCount}</div>`;
+          el.onclick = () => alert('To reopen "'+meta.title+'", add the same file(s) again on the left — your translated pages and position will load instantly from cache.');
+          shelf.appendChild(el);
+        }catch(e){}
+      }
+    }catch(e){ /* storage not available */ }
+  }
+
+  async function saveMeta(book){
+    try{
+      await window.storage.set('meta:' + book.id, JSON.stringify({
+        id: book.id, title: book.title, pageCount: book.pageCount, lastPage: book.lastPage
+      }));
+    }catch(e){}
+  }
+  async function saveCache(bookId, idx, text){
+    try{ await window.storage.set('cache:' + bookId + ':' + idx, text); }catch(e){}
+  }
+  async function loadCache(bookId, idx){
+    try{ const r = await window.storage.get('cache:' + bookId + ':' + idx); return r ? r.value : null; }
+    catch(e){ return null; }
+  }
+
+  fileInput.onchange = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const isSingleDoc = files.length === 1 && !files[0].type.startsWith('image/');
+    let book;
+
+    if (isSingleDoc){
+      const f = files[0];
+      const id = hashId(f.name, f.size);
+      const ext = f.name.split('.').pop().toLowerCase();
+      if (ext === 'pdf'){
+        const buf = await f.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+        const pages = [];
+        for (let i=1;i<=pdf.numPages;i++) pages.push({kind:'pdf', pdf, num:i});
+        book = { id, title: f.name, type:'pdf', pages, pageCount: pdf.numPages, lastPage: 0 };
+      } else {
+        const text = await f.text();
+        let chunks;
+        if (ext === 'html' || ext === 'htm'){
+          const div = document.createElement('div');
+          div.innerHTML = text;
+          const full = div.innerText || div.textContent || '';
+          chunks = chunkText(full, 1200);
+        } else {
+          chunks = chunkText(text, 1200);
+        }
+        book = { id, title: f.name, type:'text', pages: chunks.map(c=>({kind:'text', data:c})), pageCount: chunks.length, lastPage: 0 };
+      }
+    } else {
+      // treat as manga chapter: each image = one page, sorted by filename
+      const imgs = files.filter(f => f.type.startsWith('image/')).sort((a,b)=>a.name.localeCompare(b.name, undefined, {numeric:true}));
+      const dataUrls = await Promise.all(imgs.map(f => new Promise((res)=>{
+        const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f);
+      })));
+      const nameKey = imgs.map(f=>f.name+f.size).join('|');
+      const id = hashId(nameKey.slice(0,120), imgs.reduce((a,f)=>a+f.size,0));
+      book = { id, title: imgs.length>1 ? (imgs[0].name.replace(/\.[^.]+$/,'') + ' + '+(imgs.length-1)+' more') : imgs[0].name,
+               type:'manga', pages: dataUrls.map(d=>({kind:'image', data:d})), pageCount: dataUrls.length, lastPage: 0 };
+    }
+
+    books[book.id] = book;
+    currentBookId = book.id;
+    await saveMeta(book);
+    document.getElementById('fileInput').value = '';
+    await loadShelf();
+    await openPage(book.id, 0);
+  };
+
+  function chunkText(text, size){
+    const clean = text.replace(/\s+\n/g,'\n').trim();
+    if (!clean) return ['(No text found in this file.)'];
+    const out = [];
+    let i = 0;
+    while (i < clean.length){
+      let end = Math.min(i+size, clean.length);
+      const nextBreak = clean.indexOf('\n\n', end-100 > i ? end-100 : i);
+      if (nextBreak !== -1 && nextBreak < end+200 && nextBreak > i) end = nextBreak;
+      out.push(clean.slice(i, end).trim());
+      i = end;
+    }
+    return out.filter(c => c.length > 0);
+  }
+
+  async function extractSourceText(book, idx){
+    const page = book.pages[idx];
+    if (page.kind === 'text') return page.data;
+    if (page.kind === 'pdf'){
+      const p = await page.pdf.getPage(page.num);
+      const content = await p.getTextContent();
+      return content.items.map(it => it.str).join(' ').replace(/\s+/g,' ').trim() || '(No selectable text on this page — it may be a scanned image.)';
+    }
+    if (page.kind === 'image'){
+      const { data: { text } } = await Tesseract.recognize(page.data, 'eng+jpn+kor+chi_sim', { logger: () => {} });
+      return text.trim() || '(No text detected on this page.)';
+    }
+    return '';
+  }
+
+  async function translateText(text){
+    if (!text || text.length < 2 || /^\(.*\)$/.test(text)) return text;
+    const clip = text.slice(0, 4500);
+    try{
+      const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=' + encodeURIComponent(clip);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('bad status');
+      const data = await res.json();
+      return data[0].map(seg => seg[0]).join('');
+    }catch(e){
+      try{
+        const url2 = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(clip.slice(0,490)) + '&langpair=auto|en';
+        const res2 = await fetch(url2);
+        const data2 = await res2.json();
+        return data2.responseData.translatedText || '(Translation unavailable right now — try this page again shortly.)';
+      }catch(e2){
+        return '(Translation unavailable right now — try this page again shortly.)';
+      }
+    }
+  }
+
+  async function openPage(bookId, idx){
+    const book = books[bookId];
+    if (!book) return;
+    currentBookId = bookId;
+    idx = Math.max(0, Math.min(idx, book.pageCount-1));
+    book.lastPage = idx;
+    await saveMeta(book);
+    await loadShelf();
+
+    document.getElementById('topbar').style.display = 'flex';
+    document.getElementById('controls').style.display = 'flex';
+    document.getElementById('bookTitle').textContent = book.title;
+    document.getElementById('langBadge').textContent = book.type === 'manga' ? 'OCR + translate' : 'translate on view';
+    document.getElementById('pageIndicator').textContent = (idx+1) + ' / ' + book.pageCount;
+    document.getElementById('prevBtn').disabled = idx === 0;
+    document.getElementById('nextBtn').disabled = idx === book.pageCount-1;
+
+    const stage = document.getElementById('stage');
+    const page = book.pages[idx];
+    let sourcePaneHtml = '';
+    if (page.kind === 'image'){
+      sourcePaneHtml = `<div class="page-pane"><div id="imgWrap"><img src="${page.data}"></div></div>`;
+    }
+    stage.innerHTML = sourcePaneHtml + `
+      <div class="page-pane">
+        <div class="pane-label">English</div>
+        <div class="pane-body busy" id="transBody">Reading this page…</div>
+      </div>`;
+
+    const cached = await loadCache(bookId, idx);
+    if (cached){
+      document.getElementById('transBody').className = 'pane-body';
+      document.getElementById('transBody').textContent = cached;
+    } else {
+      const source = await extractSourceText(book, idx);
+      const translated = await translateText(source);
+      // guard against user having navigated away while this was running
+      if (currentBookId === bookId && book.lastPage === idx){
+        document.getElementById('transBody').className = 'pane-body';
+        document.getElementById('transBody').textContent = translated;
+      }
+      await saveCache(bookId, idx, translated);
+    }
+
+    // quietly prefetch + cache the next page so flipping forward feels instant
+    if (idx+1 < book.pageCount){
+      const already = await loadCache(bookId, idx+1);
+      if (!already){
+        extractSourceText(book, idx+1).then(src => translateText(src)).then(t => saveCache(bookId, idx+1, t));
+      }
+    }
+  }
+
+  document.getElementById('prevBtn').onclick = () => { const b = books[currentBookId]; if (b) openPage(currentBookId, b.lastPage-1); };
+  document.getElementById('nextBtn').onclick = () => { const b = books[currentBookId]; if (b) openPage(currentBookId, b.lastPage+1); };
+
+  loadShelf();
+})();
+</script>
